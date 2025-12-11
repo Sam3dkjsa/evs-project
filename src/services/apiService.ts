@@ -1,14 +1,26 @@
 // src/services/apiService.ts
-// Thin wrappers and safe stubs to satisfy the hook and provide minimal runtime behavior.
-// Set VITE_WEATHER_API to your real API base in Vercel environment variables.
+// Flexible API helpers that accept 0..2 arguments.
+// This compatibility layer avoids TypeScript errors when callers pass different arg shapes (none, a single object, or lat,lon).
 
 const API_BASE = (import.meta.env.VITE_WEATHER_API as string) || "https://api.example.com";
+
+function resolveLatLon(a?: any, b?: any): { lat?: number | null; lon?: number | null } {
+  // Support patterns:
+  //  - no args -> {lat: null, lon: null}
+  //  - single object { lat, lon }
+  //  - two separate args (lat, lon)
+  if (a == null && b == null) return { lat: null, lon: null };
+  if (typeof a === "object" && (a.lat !== undefined || a.lon !== undefined)) {
+    return { lat: a.lat ?? null, lon: a.lon ?? null };
+  }
+  // numeric args
+  return { lat: a ?? null, lon: b ?? null };
+}
 
 async function safeFetch(url: string) {
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      // return null-ish result but don't throw raw to keep callers simple
       return null;
     }
     return await res.json();
@@ -17,63 +29,57 @@ async function safeFetch(url: string) {
   }
 }
 
-/** Core helpers (keep these if hooks use them directly) */
-export async function getCurrentWeather(lat: number, lon: number) {
-  const url = `${API_BASE}/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-  const data = await safeFetch(url);
-  return data;
+/** Core endpoints (accept optional params) */
+export async function getCurrentWeather(arg1?: any, arg2?: any) {
+  const { lat, lon } = resolveLatLon(arg1, arg2);
+  const url = lat != null && lon != null ? `${API_BASE}/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}` : `${API_BASE}/weather`;
+  return await safeFetch(url);
 }
 
-export async function getForecast(lat: number, lon: number) {
-  const url = `${API_BASE}/forecast?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-  const data = await safeFetch(url);
-  return data;
+export async function getForecast(arg1?: any, arg2?: any) {
+  const { lat, lon } = resolveLatLon(arg1, arg2);
+  const url = lat != null && lon != null ? `${API_BASE}/forecast?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}` : `${API_BASE}/forecast`;
+  return await safeFetch(url);
 }
 
-export async function getAirQuality(lat: number, lon: number) {
-  const url = `${API_BASE}/air-quality?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-  const data = await safeFetch(url);
-  return data;
+export async function getAirQuality(arg1?: any, arg2?: any) {
+  const { lat, lon } = resolveLatLon(arg1, arg2);
+  const url = lat != null && lon != null ? `${API_BASE}/air-quality?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}` : `${API_BASE}/air-quality`;
+  return await safeFetch(url);
 }
 
-/** 
- * Backwards-compatible wrappers and stubs for functions referenced by hooks.
- * These keep the TypeScript build happy and provide minimal runtime behavior.
+/** Backwards-compatible aliases / wrappers that some hooks expect.
+ *  They accept 0..2 args as well.
  */
-export async function getHourlyForecast(lat: number, lon: number) {
-  // Many APIs return hourly data in the same forecast endpoint; reuse getForecast as a fallback.
-  return await getForecast(lat, lon);
+export async function getHourlyForecast(arg1?: any, arg2?: any) {
+  return await getForecast(arg1, arg2);
 }
 
-export async function getDailyForecast(lat: number, lon: number) {
-  // Similarly reuse getForecast for daily data if a dedicated endpoint is unavailable.
-  return await getForecast(lat, lon);
+export async function getDailyForecast(arg1?: any, arg2?: any) {
+  return await getForecast(arg1, arg2);
 }
 
-export async function getLocations(query: string) {
-  // If your backend supports searching locations, adjust the path accordingly.
-  // Fallback: return a simple array with the query echoed so UI can work.
+export async function getLocations(query?: string) {
+  if (!query) {
+    // return empty array or a small fallback so UI doesn't blow up
+    return [];
+  }
   const url = `${API_BASE}/locations?q=${encodeURIComponent(query)}`;
   const data = await safeFetch(url);
-  if (!data) {
-    // fallback minimal shape so selectors can present something
-    return [{ name: String(query), lat: null, lon: null }];
-  }
-  return data;
+  return data ?? [];
 }
 
-export async function getAlerts(lat: number, lon: number) {
-  // Try an alerts endpoint; if none, return an empty array.
-  const url = `${API_BASE}/alerts?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+export async function getAlerts(arg1?: any, arg2?: any) {
+  const { lat, lon } = resolveLatLon(arg1, arg2);
+  const url = lat != null && lon != null ? `${API_BASE}/alerts?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}` : `${API_BASE}/alerts`;
   const data = await safeFetch(url);
   return data ?? [];
 }
 
 export async function getEnvironmentalTips() {
-  // If you have a tips endpoint, use it; otherwise return a few defaults.
   const url = `${API_BASE}/tips`;
   const data = await safeFetch(url);
-  if (data && Array.isArray(data)) return data;
+  if (Array.isArray(data)) return data;
   return [
     { id: 1, text: "Carry an umbrella if rain is forecast." },
     { id: 2, text: "Check air-quality warnings for sensitive groups." },
